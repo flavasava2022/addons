@@ -2,7 +2,7 @@
   "name": "tuktuk-cinema-stremio",
   "version": "1.0.0",
   "description": "TukTuk Cinema Stremio Addon - Arabic content",
-  "main": "addon.js",
+  "main": "server.js",
   "scripts": {
     "start": "node server.js"
   },
