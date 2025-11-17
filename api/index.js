@@ -19,7 +19,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    const addon = addonInterface.getInterface();
+    const addon = addonInterface
     
     // Handle manifest
     if (url === '/' || url === '/manifest.json') {
