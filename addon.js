@@ -634,7 +634,7 @@ builder.defineStreamHandler(async ({ type, id }) => {
         console.log(`======================================\n`);
         return { streams };
     } catch (error) {
-        console.error('[STREAM ERROR2]', error.message);
+        console.error('[STREAM ERROR]', error.message);
         console.log(`======================================\n`);
         return { streams: [] };
     }
