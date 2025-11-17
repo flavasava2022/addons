@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 
 const manifest = {
     id: 'com.tuktukcinema.stremio',
-    version: '1.0.6',
+    version: '1.0.7',
     name: 'TukTuk Cinema',
     description: 'Arabic movies, series, and anime from TukTuk Cinema',
     resources: ['catalog', 'meta', 'stream'],
@@ -66,6 +66,9 @@ const builder = new addonBuilder(manifest);
 const MAIN_URL = 'https://tuktukcenma.cam';
 const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36';
 
+// Reduced timeout for faster failure
+const REQUEST_TIMEOUT = 4000; // 4 seconds per request
+
 const catalogUrls = {
     'tuktuk-recent': `${MAIN_URL}/recent/`,
     'tuktuk-movies-foreign': `${MAIN_URL}/category/movies-2/افلام-اجنبي/`,
@@ -77,12 +80,25 @@ const catalogUrls = {
     'tuktuk-anime': `${MAIN_URL}/category/anime-6/انمي-مترجم/`
 };
 
+// Priority order for extractors (most reliable first)
+const EXTRACTOR_PRIORITY = [
+    'lulustream',
+    'mixdrop',
+    'streamwish',
+    'vidguard',
+    'mp4upload',
+    'doodstream',
+    'earnvids',
+    'krakenfiles',
+    'fileupload'
+];
+
 // Comprehensive video extractors for ALL hosts
 async function extractMixdrop(url) {
     try {
         const response = await axios.get(url, {
             headers: { 'User-Agent': USER_AGENT, 'Referer': url },
-            timeout: 10000
+            timeout: REQUEST_TIMEOUT
         });
 
         const match = response.data.match(/MDCore\.wurl\s*=\s*"([^"]+)"/);
@@ -93,7 +109,7 @@ async function extractMixdrop(url) {
         const m3u8Match = response.data.match(/https?:\/\/[^\"']+\.m3u8/);
         if (m3u8Match) return m3u8Match[0];
     } catch (error) {
-        console.error('[Mixdrop]', error.message);
+        // Silent fail for speed
     }
     return null;
 }
@@ -102,7 +118,7 @@ async function extractDoodstream(url) {
     try {
         const response = await axios.get(url, {
             headers: { 'User-Agent': USER_AGENT, 'Referer': url },
-            timeout: 10000
+            timeout: REQUEST_TIMEOUT
         });
 
         const match = response.data.match(/\$\.get\('(\/pass_md5\/[^']+)'/);
@@ -110,7 +126,7 @@ async function extractDoodstream(url) {
             const passUrl = url.split('/e/')[0] + match[1];
             const passResponse = await axios.get(passUrl, {
                 headers: { 'User-Agent': USER_AGENT, 'Referer': url },
-                timeout: 5000
+                timeout: 3000
             });
 
             if (passResponse.data) {
@@ -118,7 +134,7 @@ async function extractDoodstream(url) {
             }
         }
     } catch (error) {
-        console.error('[Doodstream]', error.message);
+        // Silent fail
     }
     return null;
 }
@@ -127,7 +143,7 @@ async function extractStreamwish(url) {
     try {
         const response = await axios.get(url, {
             headers: { 'User-Agent': USER_AGENT, 'Referer': url },
-            timeout: 10000
+            timeout: REQUEST_TIMEOUT
         });
 
         const patterns = [
@@ -141,7 +157,7 @@ async function extractStreamwish(url) {
             if (match && match[1]) return match[1];
         }
     } catch (error) {
-        console.error('[Streamwish]', error.message);
+        // Silent fail
     }
     return null;
 }
@@ -150,7 +166,7 @@ async function extractVidguard(url) {
     try {
         const response = await axios.get(url, {
             headers: { 'User-Agent': USER_AGENT, 'Referer': url },
-            timeout: 10000
+            timeout: REQUEST_TIMEOUT
         });
 
         const patterns = [
@@ -164,7 +180,7 @@ async function extractVidguard(url) {
             if (match && match[1]) return match[1];
         }
     } catch (error) {
-        console.error('[Vidguard]', error.message);
+        // Silent fail
     }
     return null;
 }
@@ -173,10 +189,9 @@ async function extractMp4upload(url) {
     try {
         const response = await axios.get(url, {
             headers: { 'User-Agent': USER_AGENT, 'Referer': url },
-            timeout: 10000
+            timeout: REQUEST_TIMEOUT
         });
 
-        // Mp4upload uses player config
         const patterns = [
             /player\.src\(\{[^}]*src:\s*["']([^"']+)["']/,
             /"file":"([^"]+\.m3u8[^"]*)"/,
@@ -190,11 +205,10 @@ async function extractMp4upload(url) {
             }
         }
 
-        // Try to find any m3u8 or mp4 URL
         const urlMatch = response.data.match(/https?:\/\/[^\"'\s]+\.(m3u8|mp4)[^\"'\s]*/);
         if (urlMatch) return urlMatch[0];
     } catch (error) {
-        console.error('[Mp4upload]', error.message);
+        // Silent fail
     }
     return null;
 }
@@ -203,7 +217,7 @@ async function extractEarnvids(url) {
     try {
         const response = await axios.get(url, {
             headers: { 'User-Agent': USER_AGENT, 'Referer': url },
-            timeout: 10000
+            timeout: REQUEST_TIMEOUT
         });
 
         const patterns = [
@@ -217,7 +231,7 @@ async function extractEarnvids(url) {
             if (match && match[1]) return match[1];
         }
     } catch (error) {
-        console.error('[Earnvids]', error.message);
+        // Silent fail
     }
     return null;
 }
@@ -226,10 +240,9 @@ async function extractKrakenfiles(url) {
     try {
         const response = await axios.get(url, {
             headers: { 'User-Agent': USER_AGENT, 'Referer': url },
-            timeout: 10000
+            timeout: REQUEST_TIMEOUT
         });
 
-        // Krakenfiles uses different patterns
         const patterns = [
             /"videoUrl":"([^"]+)"/,
             /videoUrl\s*=\s*["']([^"']+)["']/,
@@ -240,13 +253,12 @@ async function extractKrakenfiles(url) {
             const match = response.data.match(pattern);
             if (match && match[1]) {
                 let videoUrl = match[1];
-                // Unescape if needed
                 videoUrl = videoUrl.replace(/\\/g, '');
                 return videoUrl;
             }
         }
     } catch (error) {
-        console.error('[Krakenfiles]', error.message);
+        // Silent fail
     }
     return null;
 }
@@ -255,7 +267,7 @@ async function extractLulustream(url) {
     try {
         const response = await axios.get(url, {
             headers: { 'User-Agent': USER_AGENT, 'Referer': url },
-            timeout: 10000
+            timeout: REQUEST_TIMEOUT
         });
 
         const patterns = [
@@ -269,7 +281,7 @@ async function extractLulustream(url) {
             if (match && match[1]) return match[1];
         }
     } catch (error) {
-        console.error('[Lulustream]', error.message);
+        // Silent fail
     }
     return null;
 }
@@ -278,7 +290,7 @@ async function extractFileupload(url) {
     try {
         const response = await axios.get(url, {
             headers: { 'User-Agent': USER_AGENT, 'Referer': url },
-            timeout: 10000
+            timeout: REQUEST_TIMEOUT
         });
 
         const patterns = [
@@ -292,7 +304,7 @@ async function extractFileupload(url) {
             if (match && match[1]) return match[1];
         }
     } catch (error) {
-        console.error('[Fileupload]', error.message);
+        // Silent fail
     }
     return null;
 }
@@ -300,34 +312,30 @@ async function extractFileupload(url) {
 async function extractVideoUrl(embedUrl, driver) {
     const driverLower = (driver || '').toLowerCase();
 
-    console.log(`[EXTRACTOR] Attempting ${driver}: ${embedUrl.substring(0, 50)}...`);
-
-    let videoUrl = null;
-
-    if (driverLower.includes('mixdrop')) {
-        videoUrl = await extractMixdrop(embedUrl);
-    } else if (driverLower.includes('dood')) {
-        videoUrl = await extractDoodstream(embedUrl);
-    } else if (driverLower.includes('streamwish') || driverLower.includes('streamhg')) {
-        videoUrl = await extractStreamwish(embedUrl);
-    } else if (driverLower.includes('vidguard')) {
-        videoUrl = await extractVidguard(embedUrl);
-    } else if (driverLower.includes('mp4upload')) {
-        videoUrl = await extractMp4upload(embedUrl);
-    } else if (driverLower.includes('earnvids') || driverLower.includes('videoland')) {
-        videoUrl = await extractEarnvids(embedUrl);
-    } else if (driverLower.includes('kraken')) {
-        videoUrl = await extractKrakenfiles(embedUrl);
-    } else if (driverLower.includes('lulu')) {
-        videoUrl = await extractLulustream(embedUrl);
-    } else if (driverLower.includes('fileupload') || driverLower.includes('file-upload')) {
-        videoUrl = await extractFileupload(embedUrl);
-    } else {
-        // Generic extraction
-        try {
+    try {
+        if (driverLower.includes('mixdrop')) {
+            return await extractMixdrop(embedUrl);
+        } else if (driverLower.includes('dood')) {
+            return await extractDoodstream(embedUrl);
+        } else if (driverLower.includes('streamwish') || driverLower.includes('streamhg')) {
+            return await extractStreamwish(embedUrl);
+        } else if (driverLower.includes('vidguard')) {
+            return await extractVidguard(embedUrl);
+        } else if (driverLower.includes('mp4upload')) {
+            return await extractMp4upload(embedUrl);
+        } else if (driverLower.includes('earnvids') || driverLower.includes('videoland')) {
+            return await extractEarnvids(embedUrl);
+        } else if (driverLower.includes('kraken')) {
+            return await extractKrakenfiles(embedUrl);
+        } else if (driverLower.includes('lulu')) {
+            return await extractLulustream(embedUrl);
+        } else if (driverLower.includes('fileupload') || driverLower.includes('file-upload')) {
+            return await extractFileupload(embedUrl);
+        } else {
+            // Generic extraction
             const response = await axios.get(embedUrl, {
                 headers: { 'User-Agent': USER_AGENT, 'Referer': embedUrl },
-                timeout: 10000
+                timeout: REQUEST_TIMEOUT
             });
 
             const patterns = [
@@ -341,22 +349,15 @@ async function extractVideoUrl(embedUrl, driver) {
             for (const pattern of patterns) {
                 const match = response.data.match(pattern);
                 if (match && match[1]) {
-                    videoUrl = match[1];
-                    break;
+                    return match[1];
                 }
             }
-        } catch (error) {
-            console.error(`[Generic ${driver}]`, error.message);
         }
+    } catch (error) {
+        // Silent fail for speed
     }
 
-    if (videoUrl) {
-        console.log(`[EXTRACTOR] ✓ ${driver}: Success`);
-    } else {
-        console.log(`[EXTRACTOR] ✗ ${driver}: Failed`);
-    }
-
-    return videoUrl;
+    return null;
 }
 
 function detectType(href, title) {
@@ -530,6 +531,7 @@ builder.defineMetaHandler(async ({ type, id }) => {
     }
 });
 
+// OPTIMIZED STREAM HANDLER WITH PARALLEL EXTRACTION
 builder.defineStreamHandler(async ({ type, id }) => {
     console.log(`\n======================================`);
     console.log(`[STREAM REQUEST] ${id.substring(0, 50)}...`);
@@ -598,37 +600,67 @@ builder.defineStreamHandler(async ({ type, id }) => {
             const streamsData = apiResponse.data.props.streams.data;
             console.log(`[STREAM] Found ${streamsData.length} qualities`);
 
+            // Process each quality
             for (const quality of streamsData) {
                 const resolution = quality.resolution || quality.label || 'Unknown';
 
-                if (quality.mirrors) {
-                    console.log(`[STREAM] ${resolution}: ${quality.mirrors.length} mirrors`);
+                if (quality.mirrors && quality.mirrors.length > 0) {
+                    console.log(`[STREAM] ${resolution}: ${quality.mirrors.length} mirrors - EXTRACTING IN PARALLEL`);
 
-                    for (const mirror of quality.mirrors) {
-                        let embedUrl = mirror.link;
+                    // Prepare all mirrors for parallel extraction
+                    const extractionPromises = quality.mirrors
+                        .map(mirror => {
+                            let embedUrl = mirror.link;
+                            if (embedUrl?.startsWith('//')) {
+                                embedUrl = `https:${embedUrl}`;
+                            }
 
-                        if (embedUrl?.startsWith('//')) {
-                            embedUrl = `https:${embedUrl}`;
-                        }
+                            if (!embedUrl || processedSources.has(embedUrl)) {
+                                return null;
+                            }
 
-                        if (embedUrl && !processedSources.has(embedUrl)) {
                             processedSources.add(embedUrl);
                             const driver = mirror.driver || 'Unknown';
 
-                            const videoUrl = await extractVideoUrl(embedUrl, driver);
-
-                            if (videoUrl) {
-                                streams.push({
-                                    name: `TukTuk - ${driver}`,
-                                    title: `${resolution} - ${driver}`,
-                                    url: videoUrl
+                            // Return promise that resolves to stream object or null
+                            return extractVideoUrl(embedUrl, driver)
+                                .then(videoUrl => {
+                                    if (videoUrl) {
+                                        console.log(`[EXTRACTOR] ✓ ${driver}: Success`);
+                                        return {
+                                            name: `TukTuk - ${driver}`,
+                                            title: `${resolution} - ${driver}`,
+                                            url: videoUrl,
+                                            priority: EXTRACTOR_PRIORITY.indexOf(driver.toLowerCase())
+                                        };
+                                    }
+                                    console.log(`[EXTRACTOR] ✗ ${driver}: Failed`);
+                                    return null;
+                                })
+                                .catch(err => {
+                                    console.log(`[EXTRACTOR] ✗ ${driver}: Error`);
+                                    return null;
                                 });
-                            }
-                        }
-                    }
+                        })
+                        .filter(promise => promise !== null);
+
+                    // Wait for ALL extractions to complete in parallel
+                    const results = await Promise.all(extractionPromises);
+
+                    // Add successful streams
+                    results
+                        .filter(result => result !== null)
+                        .forEach(stream => streams.push(stream));
                 }
             }
         }
+
+        // Sort streams by priority (best extractors first)
+        streams.sort((a, b) => {
+            const priorityA = a.priority !== -1 ? a.priority : 999;
+            const priorityB = b.priority !== -1 ? b.priority : 999;
+            return priorityA - priorityB;
+        });
 
         console.log(`[STREAM] Returning ${streams.length} direct streams`);
         console.log(`======================================\n`);
